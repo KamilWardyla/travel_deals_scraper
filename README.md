@@ -50,10 +50,20 @@ pip install -r requirements.txt.
 ```
 
 Ensure you have a GeckoDriver installed and added to your system's PATH if using Selenium with Firefox.
-To install the required dependencies, use the following command:
+To install the required dependencies, use the following commands:
 
 ```bash
-pip install -r requirements.txt
+# Download the latest version of GeckoDriver for your operating system (e.g., Linux 64-bit)
+wget https://github.com/mozilla/geckodriver/releases/download/v0.30.0/geckodriver-v0.30.0-linux64.tar.gz
+
+# Extract the archive
+tar -xzvf geckodriver-v0.30.0-linux64.tar.gz
+
+# Move the executable to a directory in the PATH
+sudo mv geckodriver /usr/local/bin/
+
+# Remove the downloaded archive (optional)
+rm geckodriver-v0.30.0-linux64.tar.gz
 ```
 
 ## Usage
