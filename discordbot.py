@@ -1,8 +1,9 @@
-import discord
 import os
-from dotenv import load_dotenv
-from discord.ext import commands
+
 import aiohttp
+import discord
+from discord.ext import commands
+from dotenv import load_dotenv
 
 
 def discord_bot_send_message(message):
