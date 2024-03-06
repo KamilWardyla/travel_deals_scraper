@@ -6,7 +6,7 @@ from scraper import WebScraper
 def scheduler_job():
     sched = BlockingScheduler()
 
-    @sched.scheduled_job("interval", minutes=12)
+    @sched.scheduled_job("interval", minutes=5)
     def scraping():
         web = WebScraper()
         print(web.web_scraper_last_minuter())

@@ -1,4 +1,5 @@
 import datetime
+import logging
 import re
 import time
 from difflib import SequenceMatcher
@@ -12,21 +13,16 @@ from discordbot import discord_bot_send_message
 from email_sender import email_sender
 from fly_dict import fly_dict, price_dict
 
-# class Database:
-#     def database_cursor(self):
-#         con = sqlite3.connect("scraper.db")
-#         cur = con.cursor()
-#         cur.execute("""CREATE TABLE IF NOT EXIST Holiday (
-#                     id INTEGER PRIMARY KEY ASC,
-#                     text TEXT NOT NULL,
-#                     link TEXT NOT NULL,
-#                     )""")
-#         cur.execute("""CREATE TABLE IF NOT EXIST Fly(
-#         id INTEGER PRIMARY KEY ASC,
-#         date TEXT NOT NULL,
-#         link TEXT NOT NULL,
-#         price INTEGER,
-#         )""")
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
+
+file_handler = logging.FileHandler("scraper_logs.log")
+file_handler.setLevel(logging.DEBUG)
+
+formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
+file_handler.setFormatter(formatter)
+
+logger.addHandler(file_handler)
 
 
 class WebScraper(DataBaseUtils):
@@ -68,6 +64,15 @@ class WebScraper(DataBaseUtils):
     def similar(a, b):
         return SequenceMatcher(None, a, b).ratio()
 
+    @staticmethod
+    def _logger(message):
+        """
+        Logs messages to a file.
+        :args:
+        - message (str): The message to be logged.
+        """
+        logger.info(message)
+
     def web_scraper_last_minuter(self):
         """
         Scrapes the 'https://lastminuter.pl' website for last-minute
@@ -94,35 +99,39 @@ class WebScraper(DataBaseUtils):
         the deal text is performed
           using the 'similar' method.
         """
-        response = requests.get("https://lastminuter.pl")
-        if response.status_code == 200:
-            soup = BeautifulSoup(response.text, "html.parser")
-            body = soup.body
-            last_minuter_h2_tag = body.find_all("h2")
-            for last in last_minuter_h2_tag:
-                try:
-                    link = str("https://lastminuter.pl" + last.find("a")["href"])
-                    text = str(last.find("a").contents[0])
-                    for destination in self.destination_list:
-                        for word in text.split():
-                            if self.similar(destination.lower(), word.lower()) > 0.8:
-                                if (
-                                    text,
-                                    link,
-                                ) not in self.get_data_from_table_holiday():
-                                    self.insert_data_to_holiday_table(text, link)
-                                    email_sender(text, link)
-                                    message = f"""Wlasnie wleciala nowa promka
-                                                {text}
-                                                Link: {link}
-                                                """
-                                    discord_bot_send_message(message)
-                                    print(f"Dodano okazje: {text}, {link}")
-                finally:
-                    continue
-            return f"{datetime.datetime.now()}, --- lastminuter job: done"
-        else:
-            print(f"{datetime.datetime.now()} --- Error::Response status code != 200: {response.status_code}")
+        try:
+            response = requests.get("https://lastminuter.pl")
+            if response.status_code == 200:
+                soup = BeautifulSoup(response.text, "html.parser")
+                body = soup.body
+                last_minuter_h2_tag = body.find_all("h2")
+                for last in last_minuter_h2_tag:
+                    try:
+                        link = str("https://lastminuter.pl" + last.find("a")["href"])
+                        text = str(last.find("a").contents[0])
+                        for destination in self.destination_list:
+                            for word in text.split():
+                                if self.similar(destination.lower(), word.lower()) > 0.8:
+                                    if (
+                                        text,
+                                        link,
+                                    ) not in self.get_data_from_table_holiday():
+                                        self.insert_data_to_holiday_table(text, link)
+                                        email_sender(text, link)
+                                        message = f"""Wlasnie wleciala nowa promka
+                                                    {text}
+                                                    Link: {link}
+                                                    """
+                                        discord_bot_send_message(message)
+                                        print(f"Dodano okazje: {text}, {link}")
+                    finally:
+                        continue
+                self._logger("--- lastminuter job: done")
+                return f"{datetime.datetime.now()}, --- lastminuter job: done"
+        except Exception as e:
+            error_message = f"An errror occured: {str(e)}"
+            self._logger(error_message)
+            return f"{datetime.datetime.now()} --- Error::{error_message}"
 
     def web_scraper_fly4free(self):
         """
@@ -142,49 +151,52 @@ class WebScraper(DataBaseUtils):
         - The similarity comparison between destination and words in the deal text is performed
           using the 'similar' method.
         """
-        response = requests.get("https://fly4free.pl")
-        if response.status_code == 200:
-            soup = BeautifulSoup(response.text, "html.parser")
-            body = soup.body
-            fly4free_h2_class_item_title = body.find_all("h2", {"class": "item__title"})
-            for last in fly4free_h2_class_item_title:
-                link = str(last.find("a")["href"])
-                text = str(last.find("a").contents[0])
-                for destination in self.destination_list:
-                    for word in text.split():
-                        if self.similar(destination.lower(), word.lower()) > 0.8:
-                            if (
-                                text,
-                                link,
-                            ) not in self.get_data_from_table_holiday():
-                                self.insert_data_to_holiday_table(text, link)
-                                email_sender(text, link)
-                                # sms
-                                message = f"""Wlasnie wleciala nowa promka
-                                            {text}
-                                            Link: {link}
-                                                                                """
-                                discord_bot_send_message(message)
-                                print(f"Dodano okazje: {text}, {link}")
-            fly4free_div_class_item_title = body.find_all("div", {"class": "col-xs-12 col-md-8"})
-            for last in fly4free_div_class_item_title:
-                last = last.find("h2", {"class": "item__title"})
-                link = str(last.find("a")["href"])
-                text = str(last.find("a").contents[0])
-                for destination in self.destination_list:
-                    for word in text.split():
-                        if self.similar(destination.lower(), word.lower()) > 0.8:
-                            if (
-                                text,
-                                link,
-                            ) not in self.get_data_from_table_holiday():
-                                self.insert_data_to_holiday_table(text, link)
-                                email_sender(text, link)
-                                print(f"Dodano okazje: {text}, {link}")
-
+        try:
+            response = requests.get("https://fly4free.pl")
+            if response.status_code == 200:
+                soup = BeautifulSoup(response.text, "html.parser")
+                body = soup.body
+                fly4free_h2_class_item_title = body.find_all("h2", {"class": "item__title"})
+                for last in fly4free_h2_class_item_title:
+                    link = str(last.find("a")["href"])
+                    text = str(last.find("a").contents[0])
+                    for destination in self.destination_list:
+                        for word in text.split():
+                            if self.similar(destination.lower(), word.lower()) > 0.8:
+                                if (
+                                    text,
+                                    link,
+                                ) not in self.get_data_from_table_holiday():
+                                    self.insert_data_to_holiday_table(text, link)
+                                    email_sender(text, link)
+                                    # sms
+                                    message = f"""Wlasnie wleciala nowa promka
+                                                {text}
+                                                Link: {link}
+                                                                                    """
+                                    discord_bot_send_message(message)
+                                    print(f"Dodano okazje: {text}, {link}")
+                fly4free_div_class_item_title = body.find_all("div", {"class": "col-xs-12 col-md-8"})
+                for last in fly4free_div_class_item_title:
+                    last = last.find("h2", {"class": "item__title"})
+                    link = str(last.find("a")["href"])
+                    text = str(last.find("a").contents[0])
+                    for destination in self.destination_list:
+                        for word in text.split():
+                            if self.similar(destination.lower(), word.lower()) > 0.8:
+                                if (
+                                    text,
+                                    link,
+                                ) not in self.get_data_from_table_holiday():
+                                    self.insert_data_to_holiday_table(text, link)
+                                    email_sender(text, link)
+                                    print(f"Dodano okazje: {text}, {link}")
+            self._logger("--- fly4free job: done")
             return f"{datetime.datetime.now()}, --- fly4free job: done"
-        else:
-            print(f"{datetime.datetime.now()} --- Error::Response status code != 200: {response.status_code}")
+        except Exception as e:
+            error_message = f"An errror occured: {str(e)}"
+            self._logger(error_message)
+            return f"{datetime.datetime.now()} --- Error::{error_message}"
 
     def web_scraper_wakacyjni_piraci(self):
         """
@@ -204,33 +216,37 @@ class WebScraper(DataBaseUtils):
         - The similarity comparison between destination and words in the deal text is performed
           using the 'similar' method.
         """
-        response = requests.get("https://wakacyjnipiraci.pl")
-        if response.status_code == 200:
-            soup = BeautifulSoup(response.text, "html.parser")
-            body = soup.body
-            piraci_div_class = body.find_all("div", {"class": "hp__sc-1lylu39-1 feUKcC"})
-            for last in piraci_div_class:
-                link = str(last.find("a")["href"])
-                text = str(last.find("span", {"class": "hp__sc-ro12w0-8 kWnkGU"}).contents[0])
-                for destination in self.destination_list:
-                    for word in text.split():
-                        if self.similar(destination.lower(), word.lower()) > 0.8:
-                            if (
-                                text,
-                                link,
-                            ) not in self.get_data_from_table_holiday():
-                                self.insert_data_to_holiday_table(text, link)
-                                email_sender(text, link)
-                                # sms
-                                message = f"""Wlasnie wleciala nowa promka
-                                            {text}
-                                            Link: {link}
-                                                                                """
-                                discord_bot_send_message(message)
-                                print(f"Dodano okazje: {text}, {link}")
-            return f"{datetime.datetime.now()}, --- wakacyjni piraci job: done"
-        else:
-            print(f"{datetime.datetime.now()} --- Error::Response status code != 200: {response.status_code}")
+        try:
+            response = requests.get("https://wakacyjnipiraci.pl")
+            if response.status_code == 200:
+                soup = BeautifulSoup(response.text, "html.parser")
+                body = soup.body
+                piraci_div_class = body.find_all("div", {"class": "hp__sc-1lylu39-1 feUKcC"})
+                for last in piraci_div_class:
+                    link = str(last.find("a")["href"])
+                    text = str(last.find("span", {"class": "hp__sc-ro12w0-8 kWnkGU"}).contents[0])
+                    for destination in self.destination_list:
+                        for word in text.split():
+                            if self.similar(destination.lower(), word.lower()) > 0.8:
+                                if (
+                                    text,
+                                    link,
+                                ) not in self.get_data_from_table_holiday():
+                                    self.insert_data_to_holiday_table(text, link)
+                                    email_sender(text, link)
+                                    # sms
+                                    message = f"""Wlasnie wleciala nowa promka
+                                                {text}
+                                                Link: {link}
+                                                                                    """
+                                    discord_bot_send_message(message)
+                                    print(f"Dodano okazje: {text}, {link}")
+                self._logger("--- wakacyjni piraci job: done")
+                return f"{datetime.datetime.now()}, --- wakacyjni piraci job: done"
+        except Exception as e:
+            error_message = f"An errror occured: {str(e)}"
+            self._logger(error_message)
+            return f"{datetime.datetime.now()} --- Error::{error_message}"
 
     def r_scraper_fly(self):
         """
@@ -251,63 +267,69 @@ class WebScraper(DataBaseUtils):
         - The 'get_date_from_table_fly', 'get_price_from_table_fly', 'insert_data_to_fly_table',
           and 'update_price_in_fly_table' methods are assumed to be implemented in the class.
         """
-        for destination in self.fly_dict.keys():
-            for url in self.fly_dict[destination]:
-                driver = webdriver.Firefox()
-                driver.get(url)
-                time.sleep(7)
-                html = driver.page_source
-                soup = BeautifulSoup(html, "html.parser")
-                body = soup.body
-                r_result = body.find_all("div", {"class": "termin active"})
-                date_list = []
-                price = 0
-                if r_result:
-                    for x in r_result:
-                        date = x.text[0:11]
-                        if date[-1].isnumeric():
-                            date_list.append(date[:-1])
-                        else:
-                            date_list.append(date)
-                        price += int(re.sub("[^0-9]", "", x.text[10:-3].replace(" ", "")))
-                    date_str = f"Wylot: {date_list[0]} Powrot: {date_list[1]}"
-                    if (
-                        destination,
-                        date_str,
-                    ) not in self.get_date_from_table_fly():
-                        self.insert_data_to_fly_table(destination, date_str, price, url)
-                        print(f"Dodano lot do {destination}, termin: {date_str,} cena: {price}, link: {url}")
-                    if (
-                        (destination, date_str) in self.get_date_from_table_fly()
-                        and price != self.get_price_from_table_fly(destination=destination, date=date_str)
-                        and price <= self.price_dict[destination]
-                    ):
-                        self.update_price_in_fly_table(
-                            destination=destination,
-                            date=date_str,
-                            new_price=price,
-                        )
-                        result = self.get_all_data_from_table_fly(destination=destination, date=date_str)
-                        text = f"""
-                        Hejka! :)
-                        Mam dla Ciebie dobra wiadomosc, wlasnie wleciala super cena za loty do {destination}:)
-                        Termin: {result[1]}
-                        Cena: {result[2]}
-                        """
-                        link = result[-1]
-                        message = f"""
-                        Hejka! :)
-                        Mam dla Ciebie dobra wiadomosc, wlasnie wleciala super cena za loty do {result[0]}:)
-                        Termin: {result[1]}
-                        Cena: {result[2]}
-                        Link: {result[-1]}
-                        """
-                        email_sender(text, link)
-                        discord_bot_send_message(message)
-                        print(f"{datetime.datetime.now()}, --- NOWA CENA NA LOTY :)")
-                time.sleep(5)
-                driver.quit()
-        return f"{datetime.datetime.now()}, --- r job: done"
+        try:
+            for destination in self.fly_dict.keys():
+                for url in self.fly_dict[destination]:
+                    driver = webdriver.Firefox()
+                    driver.get(url)
+                    time.sleep(7)
+                    html = driver.page_source
+                    soup = BeautifulSoup(html, "html.parser")
+                    body = soup.body
+                    r_result = body.find_all("div", {"class": "termin active"})
+                    date_list = []
+                    price = 0
+                    if r_result:
+                        for x in r_result:
+                            date = x.text[0:11]
+                            if date[-1].isnumeric():
+                                date_list.append(date[:-1])
+                            else:
+                                date_list.append(date)
+                            price += int(re.sub("[^0-9]", "", x.text[10:-3].replace(" ", "")))
+                        date_str = f"Wylot: {date_list[0]} Powrot: {date_list[1]}"
+                        if (
+                            destination,
+                            date_str,
+                        ) not in self.get_date_from_table_fly():
+                            self.insert_data_to_fly_table(destination, date_str, price, url)
+                            print(f"Dodano lot do {destination}, termin: {date_str,} cena: {price}, link: {url}")
+                        if (
+                            (destination, date_str) in self.get_date_from_table_fly()
+                            and price != self.get_price_from_table_fly(destination=destination, date=date_str)
+                            and price <= self.price_dict[destination]
+                        ):
+                            self.update_price_in_fly_table(
+                                destination=destination,
+                                date=date_str,
+                                new_price=price,
+                            )
+                            result = self.get_all_data_from_table_fly(destination=destination, date=date_str)
+                            text = f"""
+                            Hejka! :)
+                            Mam dla Ciebie dobra wiadomosc, wlasnie wleciala super cena za loty do {destination}:)
+                            Termin: {result[1]}
+                            Cena: {result[2]}
+                            """
+                            link = result[-1]
+                            message = f"""
+                            Hejka! :)
+                            Mam dla Ciebie dobra wiadomosc, wlasnie wleciala super cena za loty do {result[0]}:)
+                            Termin: {result[1]}
+                            Cena: {result[2]}
+                            Link: {result[-1]}
+                            """
+                            email_sender(text, link)
+                            discord_bot_send_message(message)
+                            print(f"{datetime.datetime.now()}, --- NOWA CENA NA LOTY :)")
+                    time.sleep(5)
+                    driver.quit()
+            self._logger("--- r job: done")
+            return f"{datetime.datetime.now()}, --- r job: done"
+        except Exception as e:
+            error_message = f"An errror occured: {str(e)}"
+            self._logger(error_message)
+            return f"{datetime.datetime.now()} --- Error::{error_message}"
 
 
 # last = WebScraper()
