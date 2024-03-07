@@ -14,7 +14,10 @@ def scheduler_job():
         print(web.web_scraper_wakacyjni_piraci())
         print(web.r_scraper_fly())
 
-    sched.start()
+    try:
+        sched.start()
+    except (KeyboardInterrupt, SystemExit):
+        sched.shutdown()
 
 
 scheduler_job()
